@@ -8,9 +8,11 @@ import time
 import gzip
 import csv
 import tempfile
-
+from google.cloud import secretmanager
+import data_util
 import logging
 import json
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 
@@ -33,95 +35,20 @@ def get_value(col_name, val):
     return value
 
 
-def generate_key_values_filter():
-    # Advertisers
-    advertiser = "Relevant Digital"
-
-    # Filter for advertiser 1 + hb_* key-values
-    filter = ReportDefinition.Filter(
-        and_filter=ReportDefinition.Filter.FilterList(
-            filters=[
-                # Advertiser filter
-                ReportDefinition.Filter(
-                    field_filter=ReportDefinition.Filter.FieldFilter(
-                        field=ReportDefinition.Field(
-                            dimension=ReportDefinition.Dimension.ADVERTISER_NAME
-                        ),
-                        operation=ReportDefinition.Filter.Operation.IN,
-                        values=[report_value.ReportValue(string_value=advertiser)]
-                    )
-                ),
-                # Key-value filter: hb_bidder OR hb_deal
-                ReportDefinition.Filter(
-                    or_filter=ReportDefinition.Filter.FilterList(
-                        filters=[
-                            ReportDefinition.Filter(
-                                field_filter=ReportDefinition.Filter.FieldFilter(
-                                    field=ReportDefinition.Field(
-                                        dimension=ReportDefinition.Dimension.KEY_VALUES_NAME
-                                    ),
-                                    operation=ReportDefinition.Filter.Operation.CONTAINS,
-                                    values=[report_value.ReportValue(string_value="hb_bidder")]
-                                )
-                            ),
-                            # ReportDefinition.Filter(
-                            #     field_filter=ReportDefinition.Filter.FieldFilter(
-                            #         field=ReportDefinition.Field(
-                            #             dimension=ReportDefinition.Dimension.KEY_VALUES_NAME
-                            #         ),
-                            #         operation=ReportDefinition.Filter.Operation.CONTAINS,
-                            #         values=[report_value.ReportValue(string_value="hb_deal")]
-                            #     )
-                            # ),
-                        ]
-                    )
-                )
-            ]
-        )
+def get_secret_data(project_id, secret_id, version_id="latest"):
+    client = secretmanager.SecretManagerServiceClient()
+    secret_detail = (
+        f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
     )
-
-    return filter
-
-def generate_yield_partner_filter():
-
-    filter = ReportDefinition.Filter(
-        and_filter=ReportDefinition.Filter.FilterList(
-            filters=[
-                ReportDefinition.Filter(
-                    field_filter=ReportDefinition.Filter.FieldFilter(
-                        field=ReportDefinition.Field(
-                            dimension=ReportDefinition.Dimension.DEMAND_CHANNEL_NAME
-                        ),
-                        operation=ReportDefinition.Filter.Operation.IN,
-                        values=[report_value.ReportValue(string_value="Open Bidding"),
-                                report_value.ReportValue(string_value="Open Bidding Direct")]
-                    )
-                )
-            ]
-        )
-    )
-
-    return filter
-
-
-def generate_network_partner_advertiser_filter():
-    advertiser_filter = ReportDefinition.Filter(
-        field_filter=ReportDefinition.Filter.FieldFilter(
-            field=ReportDefinition.Field(
-                dimension=ReportDefinition.Dimension.ADVERTISER_NAME
-            ),
-            operation=ReportDefinition.Filter.Operation.IN,
-            values=[report_value.ReportValue(string_value="Teads InApp Mediation"),
-                    report_value.ReportValue(string_value="Outbrain"),
-                    report_value.ReportValue(string_value="Yaleo - Audienzz")]
-        )
-    )
-    return advertiser_filter
-
+    response = client.access_secret_version(request={"name": secret_detail})
+    data = response.payload.data.decode("UTF-8")
+    return data
 
 class AdManagerV1Client:
-    def __init__(self, credentials=None):
-        self.client = admanager_v1.ReportServiceClient(credentials=credentials)
+    def __init__(self, project_id, credential_name):
+        credentials_json=json.loads(data_util.get_secret_data(project_id=project_id, secret_id=credential_name))
+        creds = data_util.get_credentials(credentials_json)
+        self.client = admanager_v1.ReportServiceClient(credentials=creds)
 
     def create_report(self, table_name, network_code, report_start_date, report_end_date):
         with open(f"interactive_report_query/{table_name}.json", "r", encoding="utf-8") as file:
@@ -137,20 +64,17 @@ class AdManagerV1Client:
             for metric in report_json.get("metrics", [])
         ]
 
+        filters=None
+
+
+        report_start_date = datetime.strptime(report_start_date, "%Y-%m-%d").date()
+        report_end_date = datetime.strptime(report_end_date, "%Y-%m-%d").date()
 
 
         # Build Date protobufs
         start_date_pb = date_pb2.Date(year=report_start_date.year, month=report_start_date.month, day=report_start_date.day)
         end_date_pb = date_pb2.Date(year=report_end_date.year, month=report_end_date.month, day=report_end_date.day)
 
-        if table_name.startswith("raw_gam_key_values_"):
-            filters = [generate_key_values_filter()]
-        elif table_name == 'raw_gam_yield_partner':
-            filters = [generate_yield_partner_filter()]
-        elif table_name=='raw_gam_network_partner_advertiser':
-            filters = [generate_network_partner_advertiser_filter()]
-        else:
-            filters=None
 
         # Initialize request argument(s)
         report = admanager_v1.Report(

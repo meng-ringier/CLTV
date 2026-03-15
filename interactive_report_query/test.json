@@ -1,0 +1,16 @@
+{
+  "dimensions": [
+    "date",
+    "ppid_status",
+    "serving_restriction",
+    "ad_unit_name_level_1",
+    "device_category"
+  ],
+  "metrics": [
+    "impressions",
+    "revenue_without_cpd"
+  ],
+  "dateRangeType": "CUSTOM_DATE",
+  "adUnitView": "HIERARCHICAL",
+  "report_type": "HISTORICAL"
+}

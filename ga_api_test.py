@@ -1,7 +1,8 @@
 import ga_api
 import json
+import data_util
 
-credentials_json=json.loads(ga_api.get_secret_data(project_id='authrion-app',secret_id='ringier_oauth_credential'))
+credentials_json=json.loads(data_util.get_secret_data(project_id='authrion-app',secret_id='ringier_oauth_credential'))
 property_id='185520714'
 dimensions=['deviceCategory','customUser:user_status','customUser:product_name']
 
