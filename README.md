@@ -1,0 +1,1 @@
+https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=167205990398-ajtg5evrl5eub3ivjgai68u5kh1l5enk.apps.googleusercontent.com&redirect_uri=https://www.authrion.com/de/&scope=https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/dfp&access_type=offline&prompt=consent
