@@ -147,7 +147,7 @@ GROUP BY 1,2,3,4
 
 impressions_per_view as (
 SELECT *
-FROM `master`.`ri.foundry.main.dataset.50303a1c-c1c7-480e-b2d5-8fe0cf8736b4`
+FROM `master`.`ri.foundry.main.dataset.50303a1c-c1c7-480e-b2d5-8fe0cf8736b4` -- CLTV Impressions_per_views (login_state+consent_status)
 ),
 
 unified as
@@ -173,7 +173,6 @@ on
     ga.`month`=impressions_per_view.`month`
 and  ga.`publication`=impressions_per_view.`publication`
 and  ga.`login_state`=impressions_per_view.`login_state`
-and  ga.`loyalty_segment`=impressions_per_view.`loyalty_segment`
 left join
     rpm_table
 on
