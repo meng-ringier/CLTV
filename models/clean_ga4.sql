@@ -95,6 +95,8 @@ device_x_login_state as
 )
 )
 
+
+
 SELECT
     main.`month`,
     main.publication,

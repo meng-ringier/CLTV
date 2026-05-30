@@ -94,8 +94,9 @@ device_x_login_state as
         clean_ga4 as main
     )
 )
-)
+),
 
+ga_raw as (
 SELECT
     main.`month`,
     main.publication,
@@ -118,9 +119,82 @@ from device_x_login_state
 left join
 (
 SELECT *
-FROM `master`.`ri.foundry.main.dataset.af2861dd-7973-444f-b09a-9ba7f96fbc84`
+FROM `master`.`ri.foundry.main.dataset.af2861dd-7973-444f-b09a-9ba7f96fbc84` -- table: CLTV V7 Loyalty Ratio (user_status+loyalty+device)
 ) as loyalty
 on
     main.`month`=loyalty.`month`
 and main.publication=loyalty.publication
 and main.user_status=loyalty.login_state_raw
+),
+
+ga as
+(
+SELECT `month`, publication, login_state,
+case when
+    login_state='No Consent' then 'No Consent'
+    else 'Consent' end as consent_status,
+
+sum(users) as users, sum(new_users) as new_users, sum(users)/sum(new_users) as lifetime
+FROM ga_raw
+group by 1,2,3
+),
+rpm_table as
+(
+SELECT *
+FROM `master`.`ri.foundry.main.dataset.85345020-40d0-4253-ba30-0a0c1d56098a` -- RPM
+),
+pageviews as
+(
+SELECT `month`, publication, login_state, sum(page_views) as page_views
+FROM `master`.`ri.foundry.main.dataset.32900f04-0b28-4fee-a8b6-cfa069a4480c` -- CLTV V7 Manual GA4 (login_state+loyalty)
+GROUP BY 1,2,3
+),
+
+impressions_per_view as (
+SELECT *
+FROM `master`.`ri.foundry.main.dataset.50303a1c-c1c7-480e-b2d5-8fe0cf8736b4`
+),
+
+unified as
+(
+select
+    ga.`month`, ga.publication, ga.login_state,
+    page_views/users as views_per_user,
+    impressions_per_view.impressions_per_pageviews as impressions_per_pageviews,
+    rpm_table.rpm as rpm,
+    lifetime
+from
+    ga
+left join
+    pageviews
+on
+    ga.`month`=pageviews.`month`
+and  ga.`publication`=pageviews.`publication`
+and  ga.`login_state`=pageviews.`login_state`
+left join
+    impressions_per_view
+on
+    ga.`month`=impressions_per_view.`month`
+and  ga.`publication`=impressions_per_view.`publication`
+and  ga.`login_state`=impressions_per_view.`login_state`
+left join
+    rpm_table
+on
+    ga.`month`=rpm_table.`month`
+and  ga.`publication`=rpm_table.`publication`
+and  ga.`consent_status`=rpm_table.`consent_status`
+order by 1,2,3
+)
+
+select
+        views_per_user*impressions_per_pageviews*rpm/1000*lifetime*10 as advertising_value,
+        CONCAT(`month`,'-01') as `month`,
+        publication,
+        login_state,
+        views_per_user,
+        impressions_per_pageviews,
+        views_per_user*impressions_per_pageviews as impressions_per_user,
+        rpm,
+        lifetime
+from
+unified
