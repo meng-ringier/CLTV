@@ -122,6 +122,14 @@ and main.publication=loyalty.publication
 and main.user_status=loyalty.login_state_raw
 ),
 
+customer_table as (
+SELECT `month`,publication, login_state, loyalty_segment,sum(customers) as customers
+FROM `master`.`ri.foundry.main.dataset.b5eee86b-f535-4493-8660-3966de4fd026` -- CLTV V7 True Customer (loyalty+login_state)
+group by 1,2,3,4
+order by 1
+),
+
+
 ga as
 (
 SELECT `month`, publication, login_state, loyalty_segment,
@@ -153,8 +161,11 @@ FROM `master`.`ri.foundry.main.dataset.50303a1c-c1c7-480e-b2d5-8fe0cf8736b4` -- 
 unified as
 (
 select
-    ga.`month`, ga.publication, ga.login_state,
-    page_views/users as views_per_user,
+    ga.`month`,
+    ga.publication,
+    ga.login_state,
+    ga.loyalty_segment,
+    page_views/customer_table.customers as views_per_user,
     impressions_per_view.impressions_per_pageviews as impressions_per_pageviews,
     rpm_table.rpm as rpm,
     lifetime
@@ -179,12 +190,22 @@ on
     ga.`month`=rpm_table.`month`
 and  ga.`publication`=rpm_table.`publication`
 and  ga.`consent_status`=rpm_table.`consent_status`
-order by 1,2,3
-)
+left join
+customer_table
+on
+     ga.`month`=customer_table.`month`
+and  ga.`publication`=customer_table.`publication`
+and  ga.`login_state`=customer_table.`login_state`
+and  ga.`loyalty_segment`=customer_table.`loyalty_segment`
 
+order by 1,2,3
+),
+
+advertising as (
 select
         views_per_user*impressions_per_pageviews*rpm/1000*lifetime as advertising_value,
-        CONCAT(`month`,'-01') as `month`,
+        views_per_user*impressions_per_pageviews*rpm/1000 as arpu,
+        `month`,
         publication,
         login_state,
         loyalty_segment,
@@ -195,3 +216,62 @@ select
         lifetime
 from
 unified
+),
+
+subscription_arpu as
+(
+SELECT `month`,publication, login_state, loyalty_segment, avg(subscription_value) as arpu
+FROM `master`.`ri.foundry.main.dataset.a53cdaec-91ea-4686-9f21-1ead7ba5ea9e` --- CLTV V7 Subscription ARPU (login_state+loyalty_segment+device)
+group by 1,2,3,4
+),
+subscription_lifetime as
+(
+SELECT *, average_lifetime as lifetime
+FROM `master`.`ri.foundry.main.dataset.36bd54ed-516e-4449-9341-6cc5b1b4cea2`-- CLTV V7 Subscription Liftetime(login_state+loyalty_segment)
+),
+subscription as
+(
+    select
+     t1.`month`,
+     t1.publication,
+     t1.login_state,
+     'Subscription' as type,
+     arpu,
+     lifetime,
+     CASE
+        WHEN t1.login_state='Yearly Subscription' THEN arpu*lifetime/12
+        ELSE arpu*lifetime END as value
+    from
+    subscription_lifetime t1
+    left join
+        subscription_arpu t2
+    on
+        t1.`month`=t2.`month`
+    and t1.publication=t2.publication
+    and t1.login_state=t2.login_state
+    and t1.loyalty_segment=t2.loyalty_segment
+
+),
+
+
+value_before_weight as (
+select
+     `month`,
+     publication,
+     login_state,
+     'Advertising' as type,
+     arpu,
+     lifetime,
+     advertising_value as value
+from
+    advertising
+union all
+(select *
+ from subscription
+)
+)
+
+(
+SELECT *
+FROM `master`.`ri.foundry.main.dataset.2e78d8e8-d9a2-4bac-8732-2114dd2ad1c0`  -- Customer Weight (login_state per loyalty)
+)
