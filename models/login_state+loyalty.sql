@@ -235,6 +235,7 @@ subscription as
      t1.`month`,
      t1.publication,
      t1.login_state,
+     t1.loyalty_segment,
      'Subscription' as type,
      arpu,
      lifetime,
@@ -251,14 +252,14 @@ subscription as
     and t1.login_state=t2.login_state
     and t1.loyalty_segment=t2.loyalty_segment
 
-),
+)
 
 
-value_before_weight as (
 select
      `month`,
      publication,
      login_state,
+     loyalty_segment,
      'Advertising' as type,
      arpu,
      lifetime,
@@ -268,10 +269,4 @@ from
 union all
 (select *
  from subscription
-)
-)
-
-(
-SELECT *
-FROM `master`.`ri.foundry.main.dataset.2e78d8e8-d9a2-4bac-8732-2114dd2ad1c0`  -- Customer Weight (login_state per loyalty)
 )

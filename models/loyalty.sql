@@ -1,6 +1,4 @@
-
-
-WITH
+with
 clean_ga4 as (
 SELECT
     CAST(CONCAT(SUBSTRING(`yearMonth`,1,4), '-',SUBSTRING(`yearMonth`,5,6),'-','01') as date) as `month`,
@@ -100,7 +98,8 @@ SELECT
     login_state,
     loyalty_segment,
     users*loyalty_ratio as users,
-    new_users* loyalty_ratio as new_users
+    new_users* loyalty_ratio as new_users,
+    users/new_users as advertising_lifetime
 FROM
 (
 select
@@ -124,75 +123,39 @@ and main.user_status=loyalty.login_state_raw
 ),
 
 customer_table as (
-SELECT `month`,publication, loyalty_segment, sum(customers) as customers
+SELECT `month`,publication, login_state, loyalty_segment,sum(customers) as customers
 FROM `master`.`ri.foundry.main.dataset.b5eee86b-f535-4493-8660-3966de4fd026` -- CLTV V7 True Customer (loyalty+login_state)
-group by 1,2,3
+group by 1,2,3,4
 order by 1
 ),
+
+
 ga as
 (
-SELECT
-    `month`,
-    publication,
-    loyalty_segment,
-    sum(users) as users,
-    sum(new_users) as new_users,
-    sum(users)/sum(new_users) as lifetime
-FROM ga_raw
-group by 1,2,3
-),
+SELECT `month`, publication, login_state, loyalty_segment,
+case when
+    login_state='No Consent' then 'No Consent'
+    else 'Consent' end as consent_status,
 
-gam as (
-SELECT
-    CONCAT(substring(`date`, 1,7), '-01') as `month`,
-    'blick.ch_de' as publication,
-    SUM(impressions) as impressions
-FROM `master`.`ri.foundry.main.dataset.395c5cd8-ea38-4165-83eb-eff53e6bb506`
-group by 1,2
-),
-
-gotom as (
-SELECT *
-FROM `master`.`ri.foundry.main.dataset.1eb99170-02ac-4e43-9a10-d44989af5458` -- Gotom
+sum(users) as users, sum(new_users) as new_users, sum(users)/sum(new_users) as lifetime
+FROM ga_raw  -- GA Cleaned via Query
+group by 1,2,3,4
 ),
 rpm_table as
 (
-SELECT gotom.`month`, gotom.publication, gotom_revenue/impressions*1000 as rpm
-FROM gotom
-left join
-gam
-on
-    gotom.`month`=gam.`month`
-and gotom.publication=gam.publication
+SELECT *
+FROM `master`.`ri.foundry.main.dataset.85345020-40d0-4253-ba30-0a0c1d56098a` -- RPM
 ),
 pageviews as
 (
- SELECT
-`month`,
-'blick.ch_de' as publication,
-loyalty_segment_1m as loyalty_segment,
-sum(device_count) as users,
-sum(pageview_count) as pageviews
-FROM `master`.`ri.foundry.main.dataset.b2d1b95c-e3da-43d5-89cb-ed330e4a6b2a` -- rms-data-marts.df_blickde_reporting.user-metrics-monthly
-group by 1,2,3
-order by 1
+SELECT `month`, publication, login_state,loyalty_segment, sum(page_views) as page_views
+FROM `master`.`ri.foundry.main.dataset.32900f04-0b28-4fee-a8b6-cfa069a4480c` -- CLTV V7 Manual GA4 (login_state+loyalty)
+GROUP BY 1,2,3,4
 ),
 
-
 impressions_per_view as (
-SELECT
-    gam.`month`,
-    publication,
-    impressions/page_views as impressions_per_pageviews
-FROM gam
-left join
-(
-select `month`, sum(pageviews) as page_views from pageviews
-group by 1
-) as pageviews
-on
-    gam.`month`=pageviews.`month`
-
+SELECT *
+FROM `master`.`ri.foundry.main.dataset.50303a1c-c1c7-480e-b2d5-8fe0cf8736b4` -- CLTV Impressions_per_views (login_state+consent_status)
 ),
 
 unified as
@@ -200,10 +163,9 @@ unified as
 select
     ga.`month`,
     ga.publication,
+    ga.login_state,
     ga.loyalty_segment,
-    pageviews,
-    customers,
-    pageviews.pageviews/customers as views_per_user,
+    page_views/customer_table.customers as views_per_user,
     impressions_per_view.impressions_per_pageviews as impressions_per_pageviews,
     rpm_table.rpm as rpm,
     lifetime
@@ -214,37 +176,39 @@ left join
 on
     ga.`month`=pageviews.`month`
 and  ga.`publication`=pageviews.`publication`
+and  ga.`login_state`=pageviews.`login_state`
 and  ga.`loyalty_segment`=pageviews.`loyalty_segment`
 left join
     impressions_per_view
 on
     ga.`month`=impressions_per_view.`month`
 and  ga.`publication`=impressions_per_view.`publication`
+and  ga.`login_state`=impressions_per_view.`login_state`
 left join
     rpm_table
 on
     ga.`month`=rpm_table.`month`
 and  ga.`publication`=rpm_table.`publication`
+and  ga.`consent_status`=rpm_table.`consent_status`
 left join
 customer_table
 on
      ga.`month`=customer_table.`month`
 and  ga.`publication`=customer_table.`publication`
+and  ga.`login_state`=customer_table.`login_state`
 and  ga.`loyalty_segment`=customer_table.`loyalty_segment`
+
 order by 1,2,3
-)
+),
 
-
-advertising as
-(
+advertising as (
 select
-        views_per_user*impressions_per_pageviews*rpm/1000 as arpu,
         views_per_user*impressions_per_pageviews*rpm/1000*lifetime as advertising_value,
-         `month`,
+        views_per_user*impressions_per_pageviews*rpm/1000 as arpu,
+        `month`,
         publication,
+        login_state,
         loyalty_segment,
-        pageviews,
-        customers,
         views_per_user,
         impressions_per_pageviews,
         views_per_user*impressions_per_pageviews as impressions_per_user,
@@ -254,18 +218,16 @@ from
 unified
 ),
 
-
-
 subscription_arpu as
 (
-SELECT `month`,publication, loyalty_segment, avg(subscription_value) as arpu
+SELECT `month`,publication, login_state, loyalty_segment, avg(subscription_value) as arpu
 FROM `master`.`ri.foundry.main.dataset.a53cdaec-91ea-4686-9f21-1ead7ba5ea9e` --- CLTV V7 Subscription ARPU (login_state+loyalty_segment+device)
-group by 1,2,3
+group by 1,2,3,4
 ),
 subscription_lifetime as
 (
 SELECT *, average_lifetime as lifetime
-FROM `master`.`ri.foundry.main.dataset.8d7edfa8-d811-4145-8cc2-1f915c1c7905` -- CLTV V7 Subscription Liftetime(login_state)
+FROM `master`.`ri.foundry.main.dataset.36bd54ed-516e-4449-9341-6cc5b1b4cea2`-- CLTV V7 Subscription Liftetime(login_state+loyalty_segment)
 ),
 subscription as
 (
@@ -273,6 +235,7 @@ subscription as
      t1.`month`,
      t1.publication,
      t1.login_state,
+     t1.loyalty_segment,
      'Subscription' as type,
      arpu,
      lifetime,
@@ -287,13 +250,17 @@ subscription as
         t1.`month`=t2.`month`
     and t1.publication=t2.publication
     and t1.login_state=t2.login_state
+    and t1.loyalty_segment=t2.loyalty_segment
 
-)
+),
 
+
+value_before_weight as (
 select
      `month`,
      publication,
      login_state,
+     loyalty_segment,
      'Advertising' as type,
      arpu,
      lifetime,
@@ -304,3 +271,28 @@ union all
 (select *
  from subscription
 )
+)
+,
+weight as (
+SELECT *
+FROM `master`.`ri.foundry.main.dataset.2e78d8e8-d9a2-4bac-8732-2114dd2ad1c0`  -- Customer Weight (login_state per loyalty)
+)
+
+
+select
+     t1.`month`,
+     t1.publication,
+     t1.loyalty_segment,
+     type,
+     SUM(value*weight) as weighted_value
+from
+    value_before_weight t1
+left join
+    weight t2
+on
+            t1.`month`=t2.`month`
+    and t1.publication=t2.publication
+    and t1.login_state=t2.login_state
+    and t1.loyalty_segment=t2.loyalty_segment
+GROUP BY 1,2,3,4
+order by 1,2,3
