@@ -51,7 +51,50 @@ FROM `/Ringier/Customer Lifetime Value/CLTV - Manual Monthly Data`
 order by 1,2
 ),
 
+
+loyalty_ratio_without_user_status as (
+    select
+    t1.`month`,
+    t1.publication,
+    t1.loyalty_segment,
+    t1.total_users/t2.total_users as loyalty_ratio
+     from
+    (
+    select
+        `month`,
+        publication,
+        loyalty_segment,
+        sum(users) as total_users
+    from
+        users_table
+        GROUP BY 1,2,3
+    ) as t1
+    left join
+    (
+    select
+        `month`,
+        publication,
+        sum(users) as total_users
+    from
+        users_table
+        group by 1,2
+    ) as t2
+    on
+        t1.`month`=t2.`month`
+    AND         t1.`publication`=t2.`publication`
+
+),
+
 one_log_table as
+(
+
+  select
+    t1.`month`,
+    t1.publication,
+    t1.loyalty_segment,
+    onelog_customer*loyalty_ratio as onelog_customer
+ from loyalty_ratio_without_user_status t1
+ left join
 (
 SELECT
     cast(`month` as string) as `month`,
@@ -59,6 +102,12 @@ SELECT
     one_log_not_subscribed as onelog_customer
 FROM `/Ringier/Customer Lifetime Value/CLTV - Manual Monthly Data`
 order by 1,2
+) t2
+    on
+        t1.`month`=t2.`month`
+    AND  t1.`publication`=t2.`publication`
+
+
 ),
 
 total_users_table as (
@@ -71,40 +120,6 @@ from
     users_table
 group by 1,2,3
 ),
-
-loyalty_users as (
-select
-    `month`,
-    publication,
-    user_status,
-    loyalty_segment,
-    sum(users) as total_users
-from
-    users_table
-group by 1,2,3,4
-),
-
-loyalty_ratio_table as
-(
-   select
-    main.`month`,
-    main.user_status,
-    main.loyalty_segment,
-    main.publication,
-    main.total_users/total_users_table.total_users as loyalty_ratio
-from
-   loyalty_users as main
-left join
-   total_users_table
-on
-    CAST(main.`month` AS STRING)=CAST(total_users_table.`month` AS STRING)
-AND main.publication=total_users_table.publication
-AND CAST(main.user_status AS STRING)=CAST(total_users_table.user_status as STRING)
-where
-    main.total_users is not null
-order by 1,2,3,4
-),
-
 
 consent_users_table as (
 select
@@ -186,19 +201,29 @@ subscribed_ratio_table as
     order by 1,2,3
 ),
 
+total_users_without_status_table as (
+select
+    `month`,
+    publication,
+    sum(users) as total_users
+from
+    users_table
+group by 1,2
+),
+
 rus_ratio_table as
 (
 select
     rus.`month`,
     rus.publication,
-    rus.rus_WEMF_and_foreign_traffic/total_users_table.total_users as rus_ratio
+    rus.rus_WEMF_and_foreign_traffic/total_users_without_status_table.total_users as rus_ratio
 from
     rus
 left join
-   total_users_table
+   total_users_without_status_table
 on
-    rus.`month`=total_users_table.`month`
-AND rus.publication=total_users_table.publication
+    rus.`month`=total_users_without_status_table.`month`
+AND rus.publication=total_users_without_status_table.publication
 where
     total_users is not null
 ),
@@ -225,7 +250,7 @@ no_consent_customer as (
 select
     main.`month`,
     main.publication,
-    loyalty_segment,
+    main.loyalty_segment,
     'No Consent' as login_state,
     sum(customers*consent_table.no_consent_rate) as customers
 from
@@ -235,6 +260,16 @@ left join
 on
     main.`month`=consent_table.`month`
 AND main.publication=consent_table.publication
+left join
+(
+select *
+from `/Ringier/Customer Lifetime Value/Query Generated/loyalty_ratio`
+where user_status='notLoggedIn'
+) as loyalty_ratio_table
+on
+    main.`month`=loyalty_ratio_table.`month`
+AND main.publication=loyalty_ratio_table.publication
+AND main.loyalty_segment=loyalty_ratio_table.loyalty_segment
 group by 1,2,3,4
 ),
 
@@ -244,7 +279,7 @@ select
     main.publication,
     main.loyalty_segment,
     'Logged-In' as login_state,
-    onelog_customer*loyalty_ratio_table.loyalty_ratio*main.logged_in_ratio as customers
+    onelog_customer*loyalty_ratio*logged_in_ratio as customers
 from
     logged_in_ratio_table as main
 left join
@@ -262,6 +297,7 @@ left join
 on
     main.`month`=one_log_table.`month`
 AND main.publication=one_log_table.publication
+AND main.loyalty_segment=one_log_table.loyalty_segment
 order by 1,2,3,4
 ),
 
@@ -296,8 +332,10 @@ left join
 on
     main.`month`=one_log_table.`month`
 AND main.publication=one_log_table.publication
+AND main.loyalty_segment=one_log_table.loyalty_segment
 order by 1,2,3,4
 ),
+
 
 
 yearly_subscription_customer as (
@@ -330,6 +368,7 @@ left join
 on
     main.`month`=one_log_table.`month`
 AND main.publication=one_log_table.publication
+AND main.loyalty_segment=one_log_table.loyalty_segment
 order by 1,2,3,4
 ),
 
