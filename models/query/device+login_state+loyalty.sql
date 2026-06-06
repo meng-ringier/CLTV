@@ -250,10 +250,12 @@ select
     ga.device,
     ga.login_state,
     ga.loyalty_segment,
-    CASE
-        WHEN ga.login_state in ('Consent Only','No Consent', 'Logged-In') THEN pageviews/users
-        ELSE pageviews/customer_table.customers
-    END as views_per_user,
+--    CASE
+--        WHEN ga.login_state in ('Consent Only','No Consent', 'Logged-In') THEN pageviews/users
+--        ELSE pageviews/customer_table.customers
+--    END as views_per_user,
+
+    IF(customer_table.customers=0, 0, pageviews/customer_table.customers) as views_per_user,
     impressions_per_view.impressions_per_pageviews as impressions_per_pageviews,
     rpm_table.rpm as rpm,
     lifetime

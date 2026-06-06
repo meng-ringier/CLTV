@@ -1,4 +1,4 @@
-create or replace table `/Ringier/Customer Lifetime Value/Query Generated/weighted_device_loyalty_report` USING parquet as
+create or replace table `/Ringier/Customer Lifetime Value/Query Generated/weighted_device_login_state_report` USING parquet as
 
 with
 customer_table as (
@@ -7,8 +7,8 @@ FROM `/Ringier/Customer Lifetime Value/Query Generated/customers_device_scope`
 group by 1,2,3,4,5
 order by 1
 ),
-customer_loyalty_table as (
-SELECT `month`,publication, loyalty_segment,device, sum(customers) as customers
+customer_login_state_table as (
+SELECT `month`,publication, login_state,device, sum(customers) as customers
 FROM `/Ringier/Customer Lifetime Value/Query Generated/customers_device_scope`
 group by 1,2,3,4
 order by 1
@@ -24,16 +24,16 @@ weight as
         main.device,
         main.login_state,
         main.loyalty_segment,
-        main.customers/customer_loyalty_table.customers as weight
+        main.customers/customer_login_state_table.customers as weight
     FROM
         customer_table as main
     LEFT JOIN
-        customer_loyalty_table
+        customer_login_state_table
     ON
-        main.`month`=customer_loyalty_table.`month`
-    AND main.`publication`=customer_loyalty_table.`publication`
-    AND main.`loyalty_segment`=customer_loyalty_table.`loyalty_segment`
-    AND main.`device`=customer_loyalty_table.`device`
+        main.`month`=customer_login_state_table.`month`
+    AND main.`publication`=customer_login_state_table.`publication`
+    AND main.`login_state`=customer_login_state_table.`login_state`
+    AND main.`device`=customer_login_state_table.`device`
 
 )
 
@@ -44,7 +44,7 @@ select
      t1.`month`,
      t1.publication,
      t1.device,
-     t1.loyalty_segment,
+     t1.login_state,
      type,
      SUM(weighted_value*weight) as weighted_value
 from
