@@ -157,8 +157,8 @@ login_state_table as
     SELECT
         main.`month`,
         main.publication,
-        login_state,
         device,
+        login_state,
         users,
         new_users,
         pageviews
