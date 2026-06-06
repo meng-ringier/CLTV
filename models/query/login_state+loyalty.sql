@@ -186,7 +186,7 @@ select
     ga.login_state,
     ga.loyalty_segment,
     CASE
-        WHEN ga.login_state in ('Consent Only','No Consent') THEN pageviews/users
+        WHEN ga.login_state in ('Consent Only','No Consent', 'Logged-In') THEN pageviews/users
         ELSE pageviews/customer_table.customers
     END as views_per_user,
     impressions_per_view.impressions_per_pageviews as impressions_per_pageviews,
