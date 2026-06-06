@@ -205,7 +205,14 @@ select
     'No Consent' as login_state,
     sum(customers*consent_table.no_consent_rate*loyalty_ratio) as customers
 from
+(
+select
+    *
+from
     ground_truth_customer main
+where
+    user_status='notLoggedIn'
+) main
 left join
     consent_table
 on

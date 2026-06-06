@@ -214,9 +214,16 @@ select
     main.device,
     main.loyalty_segment,
     'No Consent' as login_state,
-    sum(customers*consent_table.no_consent_rate*loyalty_ratio) as customers
+    sum(customers*consent_table.no_consent_rate) as customers
 from
-    ground_truth_customer main
+    (
+    select
+        *
+    from
+        ground_truth_customer main
+    where
+        user_status='notLoggedIn'
+    ) main
 left join
     consent_table
 on
@@ -286,6 +293,7 @@ where user_status='subscribed'
 on
     main.`month`=loyalty_ratio_table.`month`
 AND main.publication=loyalty_ratio_table.publication
+AND main.device=loyalty_ratio_table.device
 AND main.loyalty_segment=loyalty_ratio_table.loyalty_segment
 left join
 monthly_yearly_subscribers
@@ -320,6 +328,7 @@ where user_status='subscribed'
 ) as loyalty_ratio_table
 on
     main.`month`=loyalty_ratio_table.`month`
+AND main.device=loyalty_ratio_table.device
 AND main.publication=loyalty_ratio_table.publication
 AND main.loyalty_segment=loyalty_ratio_table.loyalty_segment
 left join
@@ -369,7 +378,7 @@ union all
         main.device,
         main.loyalty_segment,
         'Consent Only' as login_state,
-        main.customers - unified_customers.customers as customers
+        IF(main.customers - unified_customers.customers>0, main.customers - unified_customers.customers, 0) as customers
     from
     (
     select
