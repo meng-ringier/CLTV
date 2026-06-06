@@ -1,4 +1,8 @@
+
+create or replace table `/Ringier/Customer Lifetime Value/Query Generated/weighted_login_state+loyalty_report` USING parquet as
+
 with
+
 clean_ga4 as (
 SELECT
     CAST(CONCAT(SUBSTRING(`yearMonth`,1,4), '-',SUBSTRING(`yearMonth`,5,6),'-','01') as date) as `month`,
@@ -36,14 +40,14 @@ SELECT
     END AS login_state,
 
     SUM(totalUsers) AS users,
-    SUM(newUsers) AS new_users
-
+    SUM(newUsers) AS new_users,
+    SUM(screenPageViews) as pageviews
 FROM `master`.`ri.foundry.main.dataset.11a884fb-8002-4862-8660-a2ae56b2f2ac` -- table: GA4_blick.ch_de_v2
 GROUP BY 1,2,3
 having login_state!='Other'
 ),
 
-device_x_login_state as
+login_state_table as
 (
     select *
     FROM(
@@ -53,14 +57,17 @@ device_x_login_state as
         main.publication,
         'No Consent' as login_state,
         users*(1-consent_rate) as users,
-        new_users*(1-consent_rate) as new_users
+        new_users*(1-consent_rate) as new_users,
+        pageviews*(1-consent_rate) as pageviews
     FROM
     (
     SELECT
         `month`,
         publication,
         sum(users) as users,
-        sum(new_users) as new_users
+        sum(new_users) as new_users,
+        sum(pageviews) as pageviews
+
     FROM
         clean_ga4
     GROUP BY 1,2
@@ -83,8 +90,9 @@ device_x_login_state as
         main.`month`,
         main.publication,
         login_state,
-         users,
-        new_users
+        users,
+        new_users,
+        pageviews
     from
         clean_ga4 as main
     )
@@ -99,6 +107,7 @@ SELECT
     loyalty_segment,
     users*loyalty_ratio as users,
     new_users* loyalty_ratio as new_users,
+    pageviews*loyalty_pageviews_ratio as pageviews,
     users/new_users as advertising_lifetime
 FROM
 (
@@ -109,22 +118,23 @@ select
         when login_state in ('Logged-In') THEN 'notSubscribed'
         when login_state in ('Monthly Subscription','Yearly Subscription') THEN 'subscribed'
     end as user_status
-from device_x_login_state
+from login_state_table
 ) as main
 left join
 (
 SELECT *
-FROM `master`.`ri.foundry.main.dataset.af2861dd-7973-444f-b09a-9ba7f96fbc84` -- table: CLTV V7 Loyalty Ratio (user_status+loyalty+device)
+FROM
+`/Ringier/Customer Lifetime Value/Query Generated/loyalty_ratio`
 ) as loyalty
 on
     main.`month`=loyalty.`month`
 and main.publication=loyalty.publication
-and main.user_status=loyalty.login_state_raw
+and main.user_status=loyalty.user_status
 ),
 
 customer_table as (
 SELECT `month`,publication, login_state, loyalty_segment,sum(customers) as customers
-FROM `master`.`ri.foundry.main.dataset.b5eee86b-f535-4493-8660-3966de4fd026` -- CLTV V7 True Customer (loyalty+login_state)
+FROM `/Ringier/Customer Lifetime Value/Query Generated/customers`
 group by 1,2,3,4
 order by 1
 ),
@@ -137,7 +147,10 @@ case when
     login_state='No Consent' then 'No Consent'
     else 'Consent' end as consent_status,
 
-sum(users) as users, sum(new_users) as new_users, sum(users)/sum(new_users) as lifetime
+sum(users) as users,
+sum(new_users) as new_users,
+sum(pageviews) as pageviews,
+sum(users)/sum(new_users) as lifetime
 FROM ga_raw  -- GA Cleaned via Query
 group by 1,2,3,4
 ),
@@ -146,10 +159,17 @@ rpm_table as
 SELECT *
 FROM `master`.`ri.foundry.main.dataset.85345020-40d0-4253-ba30-0a0c1d56098a` -- RPM
 ),
-pageviews as
+--pageviews as
+--(
+--SELECT `month`, publication, login_state,loyalty_segment, sum(page_views) as page_views
+--FROM `master`.`ri.foundry.main.dataset.32900f04-0b28-4fee-a8b6-cfa069a4480c` -- CLTV V7 Manual GA4 (login_state+loyalty)
+--GROUP BY 1,2,3,4
+--),
+
+lifetime_table as
 (
-SELECT `month`, publication, login_state,loyalty_segment, sum(page_views) as page_views
-FROM `master`.`ri.foundry.main.dataset.32900f04-0b28-4fee-a8b6-cfa069a4480c` -- CLTV V7 Manual GA4 (login_state+loyalty)
+SELECT `month`, publication, login_state,loyalty_segment, sum(users)/sum(new_users) as lifetime
+FROM `master`.`ri.foundry.main.dataset.5e7ef298-1664-4480-bbd5-ddf99073d0c6`   --GA Cleaned via Query
 GROUP BY 1,2,3,4
 ),
 
@@ -165,19 +185,22 @@ select
     ga.publication,
     ga.login_state,
     ga.loyalty_segment,
-    page_views/customer_table.customers as views_per_user,
+    CASE
+        WHEN ga.login_state in ('Consent Only','No Consent') THEN pageviews/users
+        ELSE pageviews/customer_table.customers
+    END as views_per_user,
     impressions_per_view.impressions_per_pageviews as impressions_per_pageviews,
     rpm_table.rpm as rpm,
     lifetime
 from
     ga
-left join
-    pageviews
-on
-    ga.`month`=pageviews.`month`
-and  ga.`publication`=pageviews.`publication`
-and  ga.`login_state`=pageviews.`login_state`
-and  ga.`loyalty_segment`=pageviews.`loyalty_segment`
+--left join
+--    pageviews
+--on
+--    ga.`month`=pageviews.`month`
+--and  ga.`publication`=pageviews.`publication`
+--and  ga.`login_state`=pageviews.`login_state`
+--and  ga.`loyalty_segment`=pageviews.`loyalty_segment`
 left join
     impressions_per_view
 on
@@ -241,7 +264,7 @@ subscription as
      lifetime,
      CASE
         WHEN t1.login_state='Yearly Subscription' THEN arpu*lifetime/12
-        ELSE arpu*lifetime END as value
+        ELSE arpu*lifetime END as weighted_value
     from
     subscription_lifetime t1
     left join
@@ -263,7 +286,7 @@ select
      'Advertising' as type,
      arpu,
      lifetime,
-     advertising_value as value
+     advertising_value as weighted_value
 from
     advertising
 union all

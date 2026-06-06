@@ -51,50 +51,7 @@ FROM `/Ringier/Customer Lifetime Value/CLTV - Manual Monthly Data`
 order by 1,2
 ),
 
-
-loyalty_ratio_without_user_status as (
-    select
-    t1.`month`,
-    t1.publication,
-    t1.loyalty_segment,
-    t1.total_users/t2.total_users as loyalty_ratio
-     from
-    (
-    select
-        `month`,
-        publication,
-        loyalty_segment,
-        sum(users) as total_users
-    from
-        users_table
-        GROUP BY 1,2,3
-    ) as t1
-    left join
-    (
-    select
-        `month`,
-        publication,
-        sum(users) as total_users
-    from
-        users_table
-        group by 1,2
-    ) as t2
-    on
-        t1.`month`=t2.`month`
-    AND         t1.`publication`=t2.`publication`
-
-),
-
 one_log_table as
-(
-
-  select
-    t1.`month`,
-    t1.publication,
-    t1.loyalty_segment,
-    onelog_customer*loyalty_ratio as onelog_customer
- from loyalty_ratio_without_user_status t1
- left join
 (
 SELECT
     cast(`month` as string) as `month`,
@@ -102,12 +59,6 @@ SELECT
     one_log_not_subscribed as onelog_customer
 FROM `/Ringier/Customer Lifetime Value/CLTV - Manual Monthly Data`
 order by 1,2
-) t2
-    on
-        t1.`month`=t2.`month`
-    AND  t1.`publication`=t2.`publication`
-
-
 ),
 
 total_users_table as (
@@ -252,7 +203,7 @@ select
     main.publication,
     main.loyalty_segment,
     'No Consent' as login_state,
-    sum(customers*consent_table.no_consent_rate) as customers
+    sum(customers*consent_table.no_consent_rate*loyalty_ratio) as customers
 from
     ground_truth_customer main
 left join
@@ -297,7 +248,6 @@ left join
 on
     main.`month`=one_log_table.`month`
 AND main.publication=one_log_table.publication
-AND main.loyalty_segment=one_log_table.loyalty_segment
 order by 1,2,3,4
 ),
 
@@ -332,10 +282,8 @@ left join
 on
     main.`month`=one_log_table.`month`
 AND main.publication=one_log_table.publication
-AND main.loyalty_segment=one_log_table.loyalty_segment
 order by 1,2,3,4
 ),
-
 
 
 yearly_subscription_customer as (
@@ -368,7 +316,6 @@ left join
 on
     main.`month`=one_log_table.`month`
 AND main.publication=one_log_table.publication
-AND main.loyalty_segment=one_log_table.loyalty_segment
 order by 1,2,3,4
 ),
 

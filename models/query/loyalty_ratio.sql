@@ -15,46 +15,13 @@ users_table as
     group by 1,2,3,4 order by 1,2,3,4
 ),
 
-rus as (
-SELECT
-    cast(`month` as string) as `month`,
-    publication,
-    rus_WEMF_and_foreign_traffic,
-    monthly_subscribers,
-    yearly_subscribers,
-    consent_rate,
-    no_consent_rate
-FROM `/Ringier/Customer Lifetime Value/CLTV - Manual Monthly Data`
-order by 1,2
-),
-
-consent_table as
-(
-SELECT
-    cast(`month` as string) as `month`,
-    publication,
-    consent_rate,
-    no_consent_rate
-FROM `/Ringier/Customer Lifetime Value/CLTV - Manual Monthly Data`
-order by 1,2
-),
-
-one_log_table as
-(
-SELECT
-    cast(`month` as string) as `month`,
-    publication,
-    one_log_not_subscribed as onelog_customer
-FROM `/Ringier/Customer Lifetime Value/CLTV - Manual Monthly Data`
-order by 1,2
-),
-
 total_users_table as (
 select
     `month`,
     user_status,
     publication,
-    sum(users) as total_users
+    sum(users) as total_users,
+    SUM(pageviews) as total_pageviews
 from
     users_table
 group by 1,2,3
@@ -66,7 +33,8 @@ select
     publication,
     user_status,
     loyalty_segment,
-    sum(users) as total_users
+    sum(users) as total_users,
+    SUM(pageviews) as total_pageviews
 from
     users_table
 group by 1,2,3,4
@@ -78,7 +46,8 @@ group by 1,2,3,4
     main.user_status,
     main.loyalty_segment,
     main.publication,
-    main.total_users/total_users_table.total_users as loyalty_ratio
+    main.total_users/total_users_table.total_users as loyalty_ratio,
+    main.total_pageviews/total_users_table.total_pageviews as loyalty_pageviews_ratio
 from
    loyalty_users as main
 left join
