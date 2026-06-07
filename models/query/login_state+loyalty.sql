@@ -182,9 +182,13 @@ select
     pageviews,
     customer_table.customers,
     users,
+
+    -- custom adjust, wait for real partition of loyalty and login_state
     CASE
-        WHEN ga.login_state in ('No Consent') and ga.loyalty_segment in ('Brand Lover','Loyal Reader','Returning Reader', 'Casual Reader') THEN pageviews/users
-        WHEN ga.login_state in ('Consent Only') and ga.loyalty_segment in ('Brand Lover','Loyal Reader', 'Returning Reader') THEN pageviews/users
+        WHEN ga.login_state in ('No Consent') and ga.loyalty_segment in ('Brand Lover','Loyal Reader','Returning Reader') THEN pageviews/users
+        WHEN ga.login_state in ('No Consent') and ga.loyalty_segment in ('Casual Reader') THEN pageviews/users*6
+        WHEN ga.login_state in ('Consent Only') and ga.loyalty_segment in ('Returning Reader') THEN pageviews/customer_table.customers/2
+        WHEN ga.login_state in ('Consent Only') and ga.loyalty_segment in ('Brand Lover','Loyal Reader') THEN pageviews/users
         WHEN ga.login_state in ('Logged-In') and ga.loyalty_segment in ('Brand Lover') THEN pageviews/users
         ELSE pageviews/customer_table.customers
     END as views_per_user,
