@@ -124,9 +124,9 @@ login_state_table as
         main.publication,
         main.device,
         'No Consent' as login_state,
-        users*(1-consent_rate) as users,
-        new_users*(1-consent_rate) as new_users,
-        pageviews*(1-consent_rate) as pageviews
+        users*(1/consent_rate-1) as users,
+        new_users*(1/consent_rate-1) as new_users,
+        pageviews*(1/consent_rate-1) as pageviews
     FROM
     (
     SELECT

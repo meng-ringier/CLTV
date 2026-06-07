@@ -56,9 +56,9 @@ login_state_table as
         main.`month`,
         main.publication,
         'No Consent' as login_state,
-        users*(1-consent_rate) as users,
-        new_users*(1-consent_rate) as new_users,
-        pageviews*(1-consent_rate) as pageviews
+        users*(1/consent_rate-1) as users,
+        new_users*(1/consent_rate-1) as new_users,
+        pageviews*(1/consent_rate-1) as pageviews
     FROM
     (
     SELECT
@@ -159,12 +159,6 @@ rpm_table as
 SELECT *
 FROM `master`.`ri.foundry.main.dataset.85345020-40d0-4253-ba30-0a0c1d56098a` -- RPM
 ),
---pageviews as
---(
---SELECT `month`, publication, login_state,loyalty_segment, sum(page_views) as page_views
---FROM `master`.`ri.foundry.main.dataset.32900f04-0b28-4fee-a8b6-cfa069a4480c` -- CLTV V7 Manual GA4 (login_state+loyalty)
---GROUP BY 1,2,3,4
---),
 
 lifetime_table as
 (
@@ -185,8 +179,13 @@ select
     ga.publication,
     ga.login_state,
     ga.loyalty_segment,
+    pageviews,
+    customer_table.customers,
+    users,
     CASE
-        WHEN ga.login_state in ('Consent Only','No Consent', 'Logged-In') THEN pageviews/users
+        WHEN ga.login_state in ('No Consent') and ga.loyalty_segment in ('Brand Lover','Loyal Reader','Returning Reader', 'Casual Reader') THEN pageviews/users
+        WHEN ga.login_state in ('Consent Only') and ga.loyalty_segment in ('Brand Lover','Loyal Reader', 'Returning Reader') THEN pageviews/users
+        WHEN ga.login_state in ('Logged-In') and ga.loyalty_segment in ('Brand Lover') THEN pageviews/users
         ELSE pageviews/customer_table.customers
     END as views_per_user,
     impressions_per_view.impressions_per_pageviews as impressions_per_pageviews,
@@ -194,13 +193,6 @@ select
     lifetime
 from
     ga
---left join
---    pageviews
---on
---    ga.`month`=pageviews.`month`
---and  ga.`publication`=pageviews.`publication`
---and  ga.`login_state`=pageviews.`login_state`
---and  ga.`loyalty_segment`=pageviews.`loyalty_segment`
 left join
     impressions_per_view
 on
@@ -226,15 +218,18 @@ order by 1,2,3
 
 advertising as (
 select
+        pageviews,
+        customers,
+        users,
+        views_per_user,
+        impressions_per_pageviews,
+        views_per_user*impressions_per_pageviews as impressions_per_user,
         views_per_user*impressions_per_pageviews*rpm/1000*lifetime as advertising_value,
         views_per_user*impressions_per_pageviews*rpm/1000 as arpu,
         `month`,
         publication,
         login_state,
         loyalty_segment,
-        views_per_user,
-        impressions_per_pageviews,
-        views_per_user*impressions_per_pageviews as impressions_per_user,
         rpm,
         lifetime
 from
